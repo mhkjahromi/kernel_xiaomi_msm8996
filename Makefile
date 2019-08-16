@@ -303,8 +303,8 @@ CONFIG_SHELL := $(shell if [ -x "$$BASH" ]; then echo $$BASH; \
 
 HOSTCC       = gcc
 HOSTCXX      = g++
-HOSTCFLAGS   := -Wall -Wmissing-prototypes -Wstrict-prototypes -O2 -fomit-frame-pointer -std=gnu89
-HOSTCXXFLAGS = -O2
+HOSTCFLAGS   = -Wall -Wmissing-prototypes -Wstrict-prototypes -O2 -fomit-frame-pointer -std=gnu89 -pipe
+HOSTCXXFLAGS = -O2 -pipe
 
 # Decide whether to build built-in, modular, or both.
 # Normally, just do built-in.
@@ -389,11 +389,13 @@ LINUXINCLUDE    := \
 
 KBUILD_CPPFLAGS := -D__KERNEL__
 
+OPT_FLAGS	:= -march=armv8-a+simd+crypto+crc -mcpu=cortex-a57.cortex-a53 -mtune=cortex-a57.cortex-a53
+
 KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -fno-strict-aliasing -fno-common \
 		   -Werror-implicit-function-declaration \
 		   -Wno-format-security \
-		   -std=gnu89 $(call cc-option,-fno-PIE)
+		   -std=gnu89 $(call cc-option,-fno-PIE) $(OPT_FLAGS)
 
 ifeq ($(TARGET_BOARD_TYPE),auto)
 KBUILD_CFLAGS    += -DCONFIG_PLATFORM_AUTO
