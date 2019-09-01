@@ -123,3 +123,7 @@ android/configs/android-*.cfg
 /compiled/
 /package/zImage
 /package/log
+
+builder.sh
+CRSC.sh
+AnyKernel3/Image\.gz-dtb
