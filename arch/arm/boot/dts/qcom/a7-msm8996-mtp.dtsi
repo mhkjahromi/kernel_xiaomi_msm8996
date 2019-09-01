@@ -299,6 +299,13 @@
 	};
 };
 
+&i2c_6 {
+	at24@51 {
+		compatible = "atmel,24c32";
+		reg = <0x51>;
+	};
+};
+
 &ssc_sensors {
 	qcom,firmware-name = "slpi_a7";
 };

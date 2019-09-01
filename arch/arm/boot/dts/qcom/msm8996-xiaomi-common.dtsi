@@ -1778,9 +1778,9 @@
 			reg = <0x0 0x89c00000 0x0 0x6200000>;
 		};
 
-                ramoops_mem: ramoops_mem@ac000000 {
+		ramoops_mem: ramoops_mem@ac000000 {
 			label = "ramoops_mem";
-                       reg = <0 0x9ff00000 0 0x00100000>;
+			reg = <0 0x9ff00000 0 0x00100000>;
 		};
 
 		/delete-node/ cont_splash_mem_hdmi@bdd00000;
