@@ -15,8 +15,12 @@ CPPFLAGS_vmlinux.lds = -DTEXT_OFFSET=$(TEXT_OFFSET)
 OBJCOPYFLAGS	:=-O binary -R .note -R .note.gnu.build-id -R .comment -S
 GZFLAGS		:=-9
 
-ifneq ($(CONFIG_RELOCATABLE),)
-LDFLAGS_vmlinux		+= -pie -Bsymbolic
+ifeq ($(CONFIG_RELOCATABLE), y)
+# Pass --no-apply-dynamic-relocs to restore pre-binutils-2.27 behaviour
+# for relative relocs, since this leads to better Image compression
+# with the relocation offsets always being zero.
+LDFLAGS_vmlinux		+= -shared -Bsymbolic -z notext -z norelro \
+			$(call ld-option, --no-apply-dynamic-relocs)
 endif
 
 KBUILD_DEFCONFIG := defconfig
@@ -32,18 +36,29 @@ endif
 
 KBUILD_CFLAGS	+= -mgeneral-regs-only $(lseinstr)
 KBUILD_CFLAGS	+= -fno-pic
+ifeq ($(CONFIG_ARM64_ERRATUM_843419),y)
 KBUILD_CFLAGS	+= $(call cc-option, -mpc-relative-literal-loads)
+endif
 KBUILD_CFLAGS	+= -fno-asynchronous-unwind-tables
 KBUILD_AFLAGS	+= $(lseinstr)
+
+KBUILD_CFLAGS	+= $(call cc-ifversion, -ge, 0500, -DCONFIG_ARCH_SUPPORTS_INT128)
+
+KBUILD_CFLAGS	+= $(call cc-option,-mabi=lp64)
+KBUILD_AFLAGS	+= $(call cc-option,-mabi=lp64)
 
 ifeq ($(CONFIG_CPU_BIG_ENDIAN), y)
 KBUILD_CPPFLAGS	+= -mbig-endian
 AS		+= -EB
 LD		+= -EB
+LDFLAGS		+= -maarch64elfb
+UTS_MACHINE	:= aarch64_be
 else
 KBUILD_CPPFLAGS	+= -mlittle-endian
 AS		+= -EL
 LD		+= -EL
+LDFLAGS		+= -maarch64elf
+UTS_MACHINE	:= aarch64
 endif
 
 CHECKFLAGS	+= -D__aarch64__

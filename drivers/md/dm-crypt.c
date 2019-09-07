@@ -1209,14 +1209,14 @@ continue_locked:
 		spin_unlock_irq(&cc->write_thread_wait.lock);
 
 		if (unlikely(kthread_should_stop())) {
-			set_task_state(current, TASK_RUNNING);
+			set_current_state(TASK_RUNNING);
 			remove_wait_queue(&cc->write_thread_wait, &wait);
 			break;
 		}
 
 		schedule();
 
-		set_task_state(current, TASK_RUNNING);
+		set_current_state(TASK_RUNNING);
 		spin_lock_irq(&cc->write_thread_wait.lock);
 		__remove_wait_queue(&cc->write_thread_wait, &wait);
 		goto continue_locked;
@@ -1863,24 +1863,17 @@ static int crypt_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	}
 
 	ret = -ENOMEM;
-	cc->io_queue = alloc_workqueue("kcryptd_io",
-				       WQ_HIGHPRI |
-				       WQ_MEM_RECLAIM,
-				       1);
+	cc->io_queue = alloc_workqueue("kcryptd_io", WQ_HIGHPRI | WQ_CPU_INTENSIVE | WQ_MEM_RECLAIM, 1);
 	if (!cc->io_queue) {
 		ti->error = "Couldn't create kcryptd io queue";
 		goto bad;
 	}
 
 	if (test_bit(DM_CRYPT_SAME_CPU, &cc->flags))
-		cc->crypt_queue = alloc_workqueue("kcryptd",
-						  WQ_HIGHPRI |
-						  WQ_MEM_RECLAIM, 1);
+		cc->crypt_queue = alloc_workqueue("kcryptd", WQ_HIGHPRI | WQ_CPU_INTENSIVE | WQ_MEM_RECLAIM, 1);
 	else
 		cc->crypt_queue = alloc_workqueue("kcryptd",
-						  WQ_HIGHPRI |
-						  WQ_MEM_RECLAIM |
-						  WQ_UNBOUND,
+						  WQ_HIGHPRI | WQ_CPU_INTENSIVE | WQ_MEM_RECLAIM | WQ_UNBOUND,
 						  num_online_cpus());
 	if (!cc->crypt_queue) {
 		ti->error = "Couldn't create kcryptd queue";

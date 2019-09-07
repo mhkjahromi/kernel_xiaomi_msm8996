@@ -27,6 +27,11 @@ struct completion {
 	wait_queue_head_t wait;
 };
 
+#define init_completion(x) __init_completion(x)
+static inline void complete_acquire(struct completion *x) {}
+static inline void complete_release(struct completion *x) {}
+static inline void complete_release_commit(struct completion *x) {}
+
 #define COMPLETION_INITIALIZER(work) \
 	{ 0, __WAIT_QUEUE_HEAD_INITIALIZER((work).wait) }
 
@@ -70,7 +75,7 @@ struct completion {
  * This inline function will initialize a dynamically created completion
  * structure.
  */
-static inline void init_completion(struct completion *x)
+static inline void __init_completion(struct completion *x)
 {
 	x->done = 0;
 	init_waitqueue_head(&x->wait);

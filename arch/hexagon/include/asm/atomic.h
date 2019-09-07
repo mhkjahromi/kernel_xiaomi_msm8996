@@ -141,7 +141,7 @@ ATOMIC_OP(xor)
 #undef ATOMIC_OP
 
 /**
- * __atomic_add_unless - add unless the number is a given value
+ * atomic_fetch_add_unless - add unless the number is a given value
  * @v: pointer to value
  * @a: amount to add
  * @u: unless value is equal to u
@@ -150,7 +150,7 @@ ATOMIC_OP(xor)
  *
  */
 
-static inline int __atomic_add_unless(atomic_t *v, int a, int u)
+static inline int atomic_fetch_add_unless(atomic_t *v, int a, int u)
 {
 	int __oldval;
 	register int tmp;
@@ -173,6 +173,7 @@ static inline int __atomic_add_unless(atomic_t *v, int a, int u)
 	);
 	return __oldval;
 }
+#define atomic_fetch_add_unless atomic_fetch_add_unless
 
 #define atomic_inc_not_zero(v) atomic_add_unless((v), 1, 0)
 

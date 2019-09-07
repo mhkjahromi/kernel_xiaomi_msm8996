@@ -75,12 +75,7 @@ struct lock_stress_stats {
 	long n_lock_acquired;
 };
 
-#if defined(MODULE)
-#define LOCKTORTURE_RUNNABLE_INIT 1
-#else
-#define LOCKTORTURE_RUNNABLE_INIT 0
-#endif
-int torture_runnable = LOCKTORTURE_RUNNABLE_INIT;
+int torture_runnable = IS_ENABLED(MODULE);
 module_param(torture_runnable, int, 0444);
 MODULE_PARM_DESC(torture_runnable, "Start locktorture at module init");
 
@@ -394,12 +389,12 @@ static void torture_rtmutex_boost(struct torture_random_state *trsp)
 
 	if (!rt_task(current)) {
 		/*
-		 * (1) Boost priority once every ~50k operations. When the
+		 * Boost priority once every ~50k operations. When the
 		 * task tries to take the lock, the rtmutex it will account
 		 * for the new priority, and do any corresponding pi-dance.
 		 */
-		if (!(torture_random(trsp) %
-		      (cxt.nrealwriters_stress * factor))) {
+		if (trsp && !(torture_random(trsp) %
+			      (cxt.nrealwriters_stress * factor))) {
 			policy = SCHED_FIFO;
 			param.sched_priority = MAX_RT_PRIO - 1;
 		} else /* common case, do nothing */

@@ -1002,7 +1002,7 @@ static int qcom_ice_update_sec_cfg(struct ice_device *ice_dev)
 	cbuf.device_id = ICE_TZ_DEV_ID;
 	ret = scm_restore_sec_cfg(cbuf.device_id, cbuf.spare, &scm_ret);
 	if (ret || scm_ret) {
-		pr_err("%s: failed, ret %d scm_ret %llu\n",
+		pr_err("%s: failed, ret %d scm_ret %lld\n",
 						__func__, ret, scm_ret);
 		if (!ret)
 			ret = scm_ret;

@@ -737,7 +737,7 @@ EXPORT_SYMBOL_GPL(slim_msg_response);
 static int slim_processtxn(struct slim_controller *ctrl,
 				struct slim_msg_txn *txn, bool need_tid)
 {
-	u8 i = 0;
+	unsigned int i = 0;
 	int ret = 0;
 	unsigned long flags;
 
@@ -748,7 +748,7 @@ static int slim_processtxn(struct slim_controller *ctrl,
 				break;
 		}
 		if (i >= ctrl->last_tid) {
-			if (ctrl->last_tid == 255) {
+			if (ctrl->last_tid == SLIM_MAX_TXNS) {
 				spin_unlock_irqrestore(&ctrl->txn_lock, flags);
 				return -ENOMEM;
 			}
@@ -1323,8 +1323,10 @@ int slim_config_mgrports(struct slim_device *sb, u32 *ph, int nports,
 	for (i = 0; i < nports; i++) {
 		u8 pn = SLIM_HDL_TO_PORT(ph[i]);
 
-		if (ctrl->ports[pn].state == SLIM_P_CFG)
+		if (ctrl->ports[pn].state == SLIM_P_CFG) {
+			mutex_unlock(&ctrl->sched.m_reconf);
 			return -EISCONN;
+		}
 		ctrl->ports[pn].cfg = *cfg;
 	}
 	mutex_unlock(&ctrl->sched.m_reconf);

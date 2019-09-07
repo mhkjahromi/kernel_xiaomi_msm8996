@@ -82,13 +82,14 @@
 #include <linux/proc_ns.h>
 #include <linux/io.h>
 #include <linux/kaiser.h>
+#include <linux/jump_label.h>
 
 #include <asm/io.h>
 #include <asm/bugs.h>
 #include <asm/setup.h>
 #include <asm/sections.h>
 #include <asm/cacheflush.h>
-#include <soc/qcom/boot_stats.h>
+
 static int kernel_init(void *);
 
 extern void init_IRQ(void);
@@ -498,11 +499,6 @@ asmlinkage __visible void __init start_kernel(void)
 	char *command_line;
 	char *after_dashes;
 
-	/*
-	 * Need to run as early as possible, to initialize the
-	 * lockdep hash:
-	 */
-	lockdep_init();
 	set_task_stack_end_magic(&init_task);
 	smp_setup_processor_id();
 	debug_objects_early_init();
@@ -658,6 +654,7 @@ asmlinkage __visible void __init start_kernel(void)
 	signals_init();
 	/* rootfs populating might need page-writeback */
 	page_writeback_init();
+	seq_file_init();
 	proc_root_init();
 	nsfs_init();
 	cpuset_init();
@@ -861,8 +858,11 @@ static void __init do_initcalls(void)
 {
 	int level;
 
-	for (level = 0; level < ARRAY_SIZE(initcall_levels) - 1; level++)
+	for (level = 0; level < ARRAY_SIZE(initcall_levels) - 1; level++) {
 		do_initcall_level(level);
+		/* need to finish all async calls before going into next level */
+		async_synchronize_full();
+	}
 }
 
 /*
@@ -962,7 +962,6 @@ static int __ref kernel_init(void *unused)
 	numa_default_policy();
 
 	flush_delayed_fput();
-	place_marker("M : Kernel End");
 
 	if (ramdisk_execute_command) {
 		ret = run_init_process(ramdisk_execute_command);

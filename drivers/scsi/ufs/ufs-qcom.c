@@ -1518,7 +1518,6 @@ static void ufs_qcom_set_caps(struct ufs_hba *hba)
 	if (!host->disable_lpm) {
 		hba->caps |= UFSHCD_CAP_CLK_GATING;
 		hba->caps |= UFSHCD_CAP_HIBERN8_WITH_CLK_GATING;
-		hba->caps |= UFSHCD_CAP_CLK_SCALING;
 	}
 	hba->caps |= UFSHCD_CAP_AUTO_BKOPS_SUSPEND;
 
@@ -2458,7 +2457,7 @@ static int ufs_qcom_update_sec_cfg(struct ufs_hba *hba, bool restore_sec_cfg)
 	cbuf.device_id = UFS_TZ_DEV_ID;
 	ret = scm_restore_sec_cfg(cbuf.device_id, cbuf.spare, &scm_ret);
 	if (ret || scm_ret) {
-		dev_dbg(hba->dev, "%s: failed, ret %d scm_ret %llu\n",
+		dev_dbg(hba->dev, "%s: failed, ret %d scm_ret %lld\n",
 			__func__, ret, scm_ret);
 		if (!ret)
 			ret = scm_ret;
@@ -2467,7 +2466,7 @@ static int ufs_qcom_update_sec_cfg(struct ufs_hba *hba, bool restore_sec_cfg)
 	}
 
 out:
-	dev_dbg(hba->dev, "%s: ip: restore_sec_cfg %d, op: restore_sec_cfg %d, ret %d scm_ret %llu\n",
+	dev_dbg(hba->dev, "%s: ip: restore_sec_cfg %d, op: restore_sec_cfg %d, ret %d scm_ret %lld\n",
 		__func__, restore_sec_cfg, host->sec_cfg_updated, ret, scm_ret);
 	return ret;
 }

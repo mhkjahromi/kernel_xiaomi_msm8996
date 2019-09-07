@@ -258,46 +258,11 @@ static int gic_suspend(void)
 	return 0;
 }
 
-static void gic_show_resume_irq(struct gic_chip_data *gic)
-{
-	unsigned int i;
-	u32 enabled;
-	u32 pending[32];
-	void __iomem *base = gic_data_dist_base(gic);
-
-	raw_spin_lock(&irq_controller_lock);
-	for (i = 0; i * 32 < gic->gic_irqs; i++) {
-		enabled = readl_relaxed(base + GIC_DIST_ENABLE_CLEAR + i * 4);
-		pending[i] = readl_relaxed(base + GIC_DIST_PENDING_SET + i * 4);
-		pending[i] &= enabled;
-	}
-	raw_spin_unlock(&irq_controller_lock);
-
-	for (i = find_first_bit((unsigned long *)pending, gic->gic_irqs);
-		i < gic->gic_irqs;
-		i = find_next_bit((unsigned long *)pending,
-				gic->gic_irqs, i+1)) {
-		unsigned int irq = irq_find_mapping(gic->domain,
-						i + gic->irq_offset);
-		struct irq_desc *desc = irq_to_desc(irq);
-		const char *name = "null";
-
-		if (desc == NULL)
-			name = "stray irq";
-		else if (desc->action && desc->action->name)
-			name = desc->action->name;
-
-		pr_warn("%s: %d triggered %s\n", __func__,
-					i + gic->irq_offset, name);
-	}
-}
-
 static void gic_resume_one(struct gic_chip_data *gic)
 {
 	unsigned int i;
 	void __iomem *base = gic_data_dist_base(gic);
 
-	gic_show_resume_irq(gic);
 	for (i = 0; i * 32 < gic->gic_irqs; i++) {
 		/* disable all of them */
 		writel_relaxed(0xffffffff,

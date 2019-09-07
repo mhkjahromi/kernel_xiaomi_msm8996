@@ -106,16 +106,11 @@ do {								\
 
 #define raw_spin_is_locked(lock)	arch_spin_is_locked(&(lock)->raw_lock)
 
-#ifdef CONFIG_GENERIC_LOCKBREAK
-#define raw_spin_is_contended(lock) ((lock)->break_lock)
-#else
-
 #ifdef arch_spin_is_contended
 #define raw_spin_is_contended(lock)	arch_spin_is_contended(&(lock)->raw_lock)
 #else
 #define raw_spin_is_contended(lock)	(((void)(lock), 0))
 #endif /*arch_spin_is_contended*/
-#endif
 
 /*
  * Despite its name it doesn't necessarily has to be a full barrier.
@@ -130,11 +125,60 @@ do {								\
 #define smp_mb__before_spinlock()	smp_wmb()
 #endif
 
-/**
- * raw_spin_unlock_wait - wait until the spinlock gets unlocked
- * @lock: the spinlock in question.
+/*
+ * smp_mb__after_spinlock() provides the equivalent of a full memory barrier
+ * between program-order earlier lock acquisitions and program-order later
+ * memory accesses.
+ *
+ * This guarantees that the following two properties hold:
+ *
+ *   1) Given the snippet:
+ *
+ *	  { X = 0;  Y = 0; }
+ *
+ *	  CPU0				CPU1
+ *
+ *	  WRITE_ONCE(X, 1);		WRITE_ONCE(Y, 1);
+ *	  spin_lock(S);			smp_mb();
+ *	  smp_mb__after_spinlock();	r1 = READ_ONCE(X);
+ *	  r0 = READ_ONCE(Y);
+ *	  spin_unlock(S);
+ *
+ *      it is forbidden that CPU0 does not observe CPU1's store to Y (r0 = 0)
+ *      and CPU1 does not observe CPU0's store to X (r1 = 0); see the comments
+ *      preceding the call to smp_mb__after_spinlock() in __schedule() and in
+ *      try_to_wake_up().
+ *
+ *   2) Given the snippet:
+ *
+ *  { X = 0;  Y = 0; }
+ *
+ *  CPU0		CPU1				CPU2
+ *
+ *  spin_lock(S);	spin_lock(S);			r1 = READ_ONCE(Y);
+ *  WRITE_ONCE(X, 1);	smp_mb__after_spinlock();	smp_rmb();
+ *  spin_unlock(S);	r0 = READ_ONCE(X);		r2 = READ_ONCE(X);
+ *			WRITE_ONCE(Y, 1);
+ *			spin_unlock(S);
+ *
+ *      it is forbidden that CPU0's critical section executes before CPU1's
+ *      critical section (r0 = 1), CPU2 observes CPU1's store to Y (r1 = 1)
+ *      and CPU2 does not observe CPU0's store to X (r2 = 0); see the comments
+ *      preceding the calls to smp_rmb() in try_to_wake_up() for similar
+ *      snippets but "projected" onto two CPUs.
+ *
+ * Property (2) upgrades the lock to an RCsc lock.
+ *
+ * Since most load-store architectures implement ACQUIRE with an smp_mb() after
+ * the LL/SC loop, they need no further barriers. Similarly all our TSO
+ * architectures imply an smp_mb() for each atomic instruction and equally don't
+ * need more.
+ *
+ * Architectures that can implement ACQUIRE better need to take care.
  */
-#define raw_spin_unlock_wait(lock)	arch_spin_unlock_wait(&(lock)->raw_lock)
+#ifndef smp_mb__after_spinlock
+#define smp_mb__after_spinlock()	do { } while (0)
+#endif
 
 #ifdef CONFIG_DEBUG_SPINLOCK
  extern void do_raw_spin_lock(raw_spinlock_t *lock) __acquires(lock);
@@ -180,8 +224,6 @@ static inline void do_raw_spin_unlock(raw_spinlock_t *lock) __releases(lock)
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
 # define raw_spin_lock_nested(lock, subclass) \
 	_raw_spin_lock_nested(lock, subclass)
-# define raw_spin_lock_bh_nested(lock, subclass) \
-	_raw_spin_lock_bh_nested(lock, subclass)
 
 # define raw_spin_lock_nest_lock(lock, nest_lock)			\
 	 do {								\
@@ -197,7 +239,6 @@ static inline void do_raw_spin_unlock(raw_spinlock_t *lock) __releases(lock)
 # define raw_spin_lock_nested(lock, subclass)		\
 	_raw_spin_lock(((void)(subclass), (lock)))
 # define raw_spin_lock_nest_lock(lock, nest_lock)	_raw_spin_lock(lock)
-# define raw_spin_lock_bh_nested(lock, subclass)	_raw_spin_lock_bh(lock)
 #endif
 
 #if defined(CONFIG_SMP) || defined(CONFIG_DEBUG_SPINLOCK)
@@ -264,12 +305,6 @@ static inline void do_raw_spin_unlock(raw_spinlock_t *lock) __releases(lock)
 	1 : ({ local_irq_restore(flags); 0; }); \
 })
 
-/**
- * raw_spin_can_lock - would raw_spin_trylock() succeed?
- * @lock: the spinlock in question.
- */
-#define raw_spin_can_lock(lock)	(!raw_spin_is_locked(lock))
-
 /* Include rwlock functions */
 #include <linux/rwlock.h>
 
@@ -315,11 +350,6 @@ static __always_inline int spin_trylock(spinlock_t *lock)
 #define spin_lock_nested(lock, subclass)			\
 do {								\
 	raw_spin_lock_nested(spinlock_check(lock), subclass);	\
-} while (0)
-
-#define spin_lock_bh_nested(lock, subclass)			\
-do {								\
-	raw_spin_lock_bh_nested(spinlock_check(lock), subclass);\
 } while (0)
 
 #define spin_lock_nest_lock(lock, nest_lock)				\
@@ -377,11 +407,6 @@ static __always_inline int spin_trylock_irq(spinlock_t *lock)
 	raw_spin_trylock_irqsave(spinlock_check(lock), flags); \
 })
 
-static __always_inline void spin_unlock_wait(spinlock_t *lock)
-{
-	raw_spin_unlock_wait(&lock->rlock);
-}
-
 static __always_inline int spin_is_locked(spinlock_t *lock)
 {
 	return raw_spin_is_locked(&lock->rlock);
@@ -390,11 +415,6 @@ static __always_inline int spin_is_locked(spinlock_t *lock)
 static __always_inline int spin_is_contended(spinlock_t *lock)
 {
 	return raw_spin_is_contended(&lock->rlock);
-}
-
-static __always_inline int spin_can_lock(spinlock_t *lock)
-{
-	return raw_spin_can_lock(&lock->rlock);
 }
 
 #define assert_spin_locked(lock)	assert_raw_spin_locked(&(lock)->rlock)

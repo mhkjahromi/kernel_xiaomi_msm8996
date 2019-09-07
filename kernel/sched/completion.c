@@ -31,7 +31,14 @@ void complete(struct completion *x)
 	unsigned long flags;
 
 	spin_lock_irqsave(&x->wait.lock, flags);
-	x->done++;
+
+	/*
+	 * Perform commit of crossrelease here.
+	 */
+	complete_release_commit(x);
+
+	if (x->done != UINT_MAX)
+		x->done++;
 	__wake_up_locked(&x->wait, TASK_NORMAL, 1);
 	spin_unlock_irqrestore(&x->wait.lock, flags);
 }
@@ -51,7 +58,7 @@ void complete_all(struct completion *x)
 	unsigned long flags;
 
 	spin_lock_irqsave(&x->wait.lock, flags);
-	x->done += UINT_MAX/2;
+	x->done = UINT_MAX;
 	__wake_up_locked(&x->wait, TASK_NORMAL, 0);
 	spin_unlock_irqrestore(&x->wait.lock, flags);
 }
@@ -79,7 +86,8 @@ do_wait_for_common(struct completion *x,
 		if (!x->done)
 			return timeout;
 	}
-	x->done--;
+	if (x->done != UINT_MAX)
+		x->done--;
 	return timeout ?: 1;
 }
 
@@ -89,9 +97,14 @@ __wait_for_common(struct completion *x,
 {
 	might_sleep();
 
+	complete_acquire(x);
+
 	spin_lock_irq(&x->wait.lock);
 	timeout = do_wait_for_common(x, action, timeout, state);
 	spin_unlock_irq(&x->wait.lock);
+
+	complete_release(x);
+
 	return timeout;
 }
 
@@ -280,7 +293,7 @@ bool try_wait_for_completion(struct completion *x)
 	spin_lock_irqsave(&x->wait.lock, flags);
 	if (!x->done)
 		ret = 0;
-	else
+	else if (x->done != UINT_MAX)
 		x->done--;
 	spin_unlock_irqrestore(&x->wait.lock, flags);
 	return ret;
@@ -297,6 +310,8 @@ EXPORT_SYMBOL(try_wait_for_completion);
  */
 bool completion_done(struct completion *x)
 {
+	unsigned long flags;
+
 	if (!READ_ONCE(x->done))
 		return false;
 
@@ -304,14 +319,9 @@ bool completion_done(struct completion *x)
 	 * If ->done, we need to wait for complete() to release ->wait.lock
 	 * otherwise we can end up freeing the completion before complete()
 	 * is done referencing it.
-	 *
-	 * The RMB pairs with complete()'s RELEASE of ->wait.lock and orders
-	 * the loads of ->done and ->wait.lock such that we cannot observe
-	 * the lock before complete() acquires it while observing the ->done
-	 * after it's acquired the lock.
 	 */
-	smp_rmb();
-	spin_unlock_wait(&x->wait.lock);
+	spin_lock_irqsave(&x->wait.lock, flags);
+	spin_unlock_irqrestore(&x->wait.lock, flags);
 	return true;
 }
 EXPORT_SYMBOL(completion_done);

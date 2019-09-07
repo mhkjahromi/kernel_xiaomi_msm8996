@@ -13,6 +13,7 @@
 
 #include <linux/clk.h>
 #include <linux/cpumask.h>
+#include <linux/cputime.h>
 #include <linux/completion.h>
 #include <linux/kobject.h>
 #include <linux/notifier.h>
@@ -80,7 +81,6 @@ struct cpufreq_policy {
 	unsigned int		last_policy; /* policy before unplug */
 	struct cpufreq_governor	*governor; /* see below */
 	void			*governor_data;
-	bool			governor_enabled; /* governor start/stop flag */
 	char			last_governor[CPUFREQ_NAME_LEN]; /* last governor used */
 
 	struct work_struct	update; /* if update_policy() needs to be
@@ -100,10 +100,6 @@ struct cpufreq_policy {
 	 * - Any routine that will write to the policy structure and/or may take away
 	 *   the policy altogether (eg. CPU hotplug), will hold this lock in write
 	 *   mode before doing so.
-	 *
-	 * Additional rules:
-	 * - Lock should not be held across
-	 *     __cpufreq_governor(data, CPUFREQ_GOV_POLICY_EXIT);
 	 */
 	struct rw_semaphore	rwsem;
 
@@ -126,6 +122,18 @@ struct cpufreq_policy {
 	 */
 	unsigned int		up_transition_delay_us;
 	unsigned int		down_transition_delay_us;
+
+	/* Boost switch for tasks with p->in_iowait set */
+	bool iowait_boost_enable;
+
+	/*
+	 * Remote DVFS flag (Not added to the driver structure as we don't want
+	 * to access another structure from scheduler hotpath).
+	 *
+	 * Should be set if CPUs can do DVFS on behalf of other CPUs from
+	 * different cpufreq policies.
+	 */
+	bool			dvfs_possible_from_any_cpu;
 
 	 /* Cached frequency lookup from cpufreq_driver_resolve_freq. */
 	unsigned int cached_target_freq;
@@ -186,6 +194,7 @@ int cpufreq_update_policy(unsigned int cpu);
 bool have_governor_per_policy(void);
 bool cpufreq_driver_is_slow(void);
 struct kobject *get_governor_parent_kobj(struct cpufreq_policy *policy);
+void cpufreq_enable_fast_switch(struct cpufreq_policy *policy);
 #else
 static inline unsigned int cpufreq_get(unsigned int cpu)
 {
@@ -258,6 +267,8 @@ struct cpufreq_driver {
 				  unsigned int relation);	/* Deprecated */
 	int		(*target_index)(struct cpufreq_policy *policy,
 					unsigned int index);
+	unsigned int	(*fast_switch)(struct cpufreq_policy *policy,
+				       unsigned int target_freq);
 	/*
 	 * Only for drivers with target_index() and CPUFREQ_ASYNC_NOTIFICATION
 	 * unset.
@@ -570,6 +581,17 @@ struct governor_attr {
 			 size_t count);
 };
 
+static inline bool cpufreq_this_cpu_can_update(struct cpufreq_policy *policy)
+{
+	/*
+	 * Allow remote callbacks if:
+	 * - dvfs_possible_from_any_cpu flag is set
+	 * - the local and remote CPUs share cpufreq policy
+	 */
+	return policy->dvfs_possible_from_any_cpu ||
+		cpumask_test_cpu(smp_processor_id(), policy->cpus);
+}
+
 /*********************************************************************
  *                     FREQUENCY TABLE HELPERS                       *
  *********************************************************************/
@@ -659,6 +681,8 @@ int cpufreq_boost_supported(void);
 int cpufreq_boost_enabled(void);
 int cpufreq_enable_boost_support(void);
 bool policy_has_boost_freq(struct cpufreq_policy *policy);
+void acct_update_power(struct task_struct *p, cputime_t cputime);
+void cpufreq_task_stats_init(struct task_struct *p);
 #else
 static inline int cpufreq_boost_trigger_state(int state)
 {
@@ -686,6 +710,9 @@ static inline bool policy_has_boost_freq(struct cpufreq_policy *policy)
 /* the following funtion is for cpufreq core use only */
 struct cpufreq_frequency_table *cpufreq_frequency_get_table(unsigned int cpu);
 
+extern void arch_set_freq_scale(struct cpumask *cpus, unsigned long cur_freq,
+				unsigned long max_freq);
+
 /* the following are really really optional */
 extern struct freq_attr cpufreq_freq_attr_scaling_available_freqs;
 extern struct freq_attr cpufreq_freq_attr_scaling_boost_freqs;
@@ -700,5 +727,35 @@ int cpufreq_generic_init(struct cpufreq_policy *policy,
 
 struct sched_domain;
 unsigned long cpufreq_scale_freq_capacity(struct sched_domain *sd, int cpu);
-unsigned long cpufreq_scale_max_freq_capacity(int cpu);
+unsigned long cpufreq_scale_max_freq_capacity(struct sched_domain *sd, int cpu);
+unsigned long cpufreq_scale_min_freq_capacity(struct sched_domain *sd, int cpu);
 #endif /* _LINUX_CPUFREQ_H */
+
+/*********************************************************************
+ *                         CPUFREQ STATS                             *
+ *********************************************************************/
+
+#ifdef CONFIG_CPU_FREQ_STAT
+
+void acct_update_power(struct task_struct *p, cputime_t cputime);
+void cpufreq_task_stats_init(struct task_struct *p);
+void cpufreq_task_stats_alloc(struct task_struct *p);
+void cpufreq_task_stats_free(struct task_struct *p);
+void cpufreq_task_stats_remove_uids(uid_t uid_start, uid_t uid_end);
+int  proc_time_in_state_show(struct seq_file *m, struct pid_namespace *ns,
+	struct pid *pid, struct task_struct *p);
+int  proc_concurrent_active_time_show(struct seq_file *m,
+	struct pid_namespace *ns, struct pid *pid, struct task_struct *p);
+int  proc_concurrent_policy_time_show(struct seq_file *m,
+	struct pid_namespace *ns, struct pid *pid, struct task_struct *p);
+int single_uid_time_in_state_open(struct inode *inode, struct file *file);
+#else
+static inline void acct_update_power(struct task_struct *p,
+	cputime_t cputime) {}
+static inline void cpufreq_task_stats_init(struct task_struct *p) {}
+static inline void cpufreq_task_stats_alloc(struct task_struct *p) {}
+static inline void cpufreq_task_stats_free(struct task_struct *p) {}
+static inline void cpufreq_task_stats_exit(struct task_struct *p) {}
+static inline void cpufreq_task_stats_remove_uids(uid_t uid_start,
+	uid_t uid_end) {}
+#endif

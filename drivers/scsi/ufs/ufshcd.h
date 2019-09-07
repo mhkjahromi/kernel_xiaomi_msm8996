@@ -570,7 +570,8 @@ enum ts_types {
 	TS_URGENT_READ		= 3,
 	TS_URGENT_WRITE		= 4,
 	TS_FLUSH		= 5,
-	TS_NUM_STATS		= 6,
+	TS_DISCARD		= 6,
+	TS_NUM_STATS		= 7,
 };
 
 /**
@@ -888,6 +889,8 @@ struct ufs_hba {
 	/* Number of requests aborts */
 	int req_abort_count;
 
+	u32 security_in;
+
 	/* Number of lanes available (1 or 2) for Rx/Tx */
 	u32 lanes_per_direction;
 
@@ -957,6 +960,7 @@ struct ufs_hba {
 	struct io_latency_state io_lat_read;
 	struct io_latency_state io_lat_write;
 	bool restore_needed;
+
 };
 
 static inline void ufshcd_mark_shutdown_ongoing(struct ufs_hba *hba)

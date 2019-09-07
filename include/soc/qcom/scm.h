@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -101,6 +101,8 @@ extern int scm_call(u32 svc_id, u32 cmd_id, const void *cmd_buf, size_t cmd_len,
 
 extern int scm_call2(u32 cmd_id, struct scm_desc *desc);
 
+extern int scm_call2_noretry(u32 cmd_id, struct scm_desc *desc);
+
 extern int scm_call2_atomic(u32 cmd_id, struct scm_desc *desc);
 
 extern int scm_call_noalloc(u32 svc_id, u32 cmd_id, const void *cmd_buf,
@@ -146,6 +148,11 @@ static inline int scm_call(u32 svc_id, u32 cmd_id, const void *cmd_buf,
 }
 
 static inline int scm_call2(u32 cmd_id, struct scm_desc *desc)
+{
+	return 0;
+}
+
+static inline int scm_call2_noretry(u32 cmd_id, struct scm_desc *desc)
 {
 	return 0;
 }
@@ -215,7 +222,7 @@ static inline bool is_scm_armv8(void)
 	return true;
 }
 
-static inline int scm_restore_sec_cfg(u32 device_id, u32 spare, u64 *scm_ret)
+static inline int scm_restore_sec_cfg(u32 device_id, u32 spare, int *scm_ret)
 {
 	return 0;
 }

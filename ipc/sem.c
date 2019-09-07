@@ -260,16 +260,6 @@ static void sem_rcu_free(struct rcu_head *head)
 }
 
 /*
- * spin_unlock_wait() and !spin_is_locked() are not memory barriers, they
- * are only control barriers.
- * The code must pair with spin_unlock(&sem->lock) or
- * spin_unlock(&sem_perm.lock), thus just the control barrier is insufficient.
- *
- * smp_rmb() is sufficient, as writes cannot pass the control barrier.
- */
-#define ipc_smp_acquire__after_spin_is_unlocked()	smp_rmb()
-
-/*
  * Enter the mode suitable for non-simple operations:
  * Caller must own sem_perm.lock.
  */
@@ -293,7 +283,6 @@ static void complexmode_enter(struct sem_array *sma)
 		sem = sma->sem_base + i;
 		spin_unlock_wait(&sem->lock);
 	}
-	ipc_smp_acquire__after_spin_is_unlocked();
 }
 
 /*
@@ -2109,7 +2098,8 @@ void exit_sem(struct task_struct *tsk)
 			 * possibility where we exit while freeary() didn't
 			 * finish unlocking sem_undo_list.
 			 */
-			spin_unlock_wait(&ulp->lock);
+			spin_lock(&ulp->lock);
+			spin_unlock(&ulp->lock);
 			rcu_read_unlock();
 			break;
 		}

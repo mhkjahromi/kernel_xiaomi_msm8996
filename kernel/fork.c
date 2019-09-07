@@ -78,7 +78,10 @@
 #include <linux/compiler.h>
 #include <linux/sysctl.h>
 #include <linux/kcov.h>
-#include <linux/cpufreq_times.h>
+#include <linux/cpu_input_boost.h>
+#include <linux/devfreq_boost.h>
+#include <linux/cpufreq.h>
+#include <linux/simple_lmk.h>
 
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
@@ -229,7 +232,9 @@ static void account_kernel_stack(unsigned long *stack, int account)
 
 void free_task(struct task_struct *tsk)
 {
-	cpufreq_task_times_exit(tsk);
+#ifdef CONFIG_CPU_FREQ_STAT
+	cpufreq_task_stats_free(tsk);
+#endif
 	account_kernel_stack(tsk->stack, -1);
 	arch_release_thread_stack(tsk->stack);
 	free_thread_stack(tsk->stack);
@@ -306,12 +311,14 @@ void __init fork_init(void)
 {
 #ifndef CONFIG_ARCH_TASK_STRUCT_ALLOCATOR
 #ifndef ARCH_MIN_TASKALIGN
-#define ARCH_MIN_TASKALIGN	L1_CACHE_BYTES
+#define ARCH_MIN_TASKALIGN	0
 #endif
+	int align = min_t(int, L1_CACHE_BYTES, ARCH_MIN_TASKALIGN);
+
 	/* create a slab on which task_structs can be allocated */
 	task_struct_cachep =
 		kmem_cache_create("task_struct", arch_task_struct_size,
-			ARCH_MIN_TASKALIGN, SLAB_PANIC | SLAB_NOTRACK, NULL);
+			align, SLAB_PANIC | SLAB_NOTRACK, NULL);
 #endif
 
 	/* do the arch specific task caches init */
@@ -323,6 +330,8 @@ void __init fork_init(void)
 	init_task.signal->rlim[RLIMIT_NPROC].rlim_max = max_threads/2;
 	init_task.signal->rlim[RLIMIT_SIGPENDING] =
 		init_task.signal->rlim[RLIMIT_NPROC];
+
+	lockdep_init_task(&init_task);
 }
 
 int __weak arch_dup_task_struct(struct task_struct *dst,
@@ -726,6 +735,7 @@ static inline void __mmput(struct mm_struct *mm)
 	}
 	if (mm->binfmt)
 		module_put(mm->binfmt->module);
+	simple_lmk_mm_freed(mm);
 	mmdrop(mm);
 }
 
@@ -1274,8 +1284,8 @@ static void rt_mutex_init_task(struct task_struct *p)
 {
 	raw_spin_lock_init(&p->pi_lock);
 #ifdef CONFIG_RT_MUTEXES
-	p->pi_waiters = RB_ROOT;
-	p->pi_waiters_leftmost = NULL;
+	p->pi_waiters = RB_ROOT_CACHED;
+	p->pi_top_task = NULL;
 	p->pi_blocked_on = NULL;
 #endif
 }
@@ -1370,8 +1380,6 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	p = dup_task_struct(current, node);
 	if (!p)
 		goto fork_out;
-
-	cpufreq_task_times_init(p);
 
 	/*
 	 * This _must_ happen before we call free_task(), i.e. before we jump
@@ -1485,6 +1493,7 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	p->lockdep_depth = 0; /* no locks held yet */
 	p->curr_chain_key = 0;
 	p->lockdep_recursion = 0;
+	lockdep_init_task(p);
 #endif
 
 #ifdef CONFIG_DEBUG_MUTEXES
@@ -1738,7 +1747,7 @@ bad_fork_cleanup_audit:
 bad_fork_cleanup_perf:
 	perf_event_free_task(p);
 bad_fork_cleanup_policy:
-	free_task_load_ptrs(p);
+	lockdep_free_task(p);
 #ifdef CONFIG_NUMA
 	mpol_put(p->mempolicy);
 bad_fork_cleanup_threadgroup_lock:
@@ -1793,6 +1802,12 @@ long _do_fork(unsigned long clone_flags,
 	int trace = 0;
 	long nr;
 
+	/* Boost CPU to the max for 50 ms when userspace launches an app */
+	if (task_is_zygote(current)) {
+		cpu_input_boost_kick_max(50);
+		devfreq_boost_kick_max(DEVFREQ_MSM_CPUBW, 50);
+	}
+
 	/*
 	 * Determine whether and which event to report to ptracer.  When
 	 * called from kernel_thread or CLONE_UNTRACED is explicitly
@@ -1820,8 +1835,6 @@ long _do_fork(unsigned long clone_flags,
 	if (!IS_ERR(p)) {
 		struct completion vfork;
 		struct pid *pid;
-
-		cpufreq_task_times_alloc(p);
 
 		trace_sched_process_fork(current, p);
 

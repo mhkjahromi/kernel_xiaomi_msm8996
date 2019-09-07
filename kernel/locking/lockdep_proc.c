@@ -67,7 +67,7 @@ static int l_show(struct seq_file *m, void *v)
 
 	seq_printf(m, "%p", class->key);
 #ifdef CONFIG_DEBUG_LOCKDEP
-	seq_printf(m, " OPS:%8ld", class->ops);
+	seq_printf(m, " OPS:%8ld", debug_class_ops_read(class));
 #endif
 #ifdef CONFIG_PROVE_LOCKING
 	seq_printf(m, " FD:%5ld", lockdep_count_forward_deps(class));
@@ -115,18 +115,18 @@ static const struct file_operations proc_lockdep_operations = {
 #ifdef CONFIG_PROVE_LOCKING
 static void *lc_start(struct seq_file *m, loff_t *pos)
 {
+	if (*pos < 0)
+		return NULL;
+
 	if (*pos == 0)
 		return SEQ_START_TOKEN;
 
-	if (*pos - 1 < nr_lock_chains)
-		return lock_chains + (*pos - 1);
-
-	return NULL;
+	return lock_chains + (*pos - 1);
 }
 
 static void *lc_next(struct seq_file *m, void *v, loff_t *pos)
 {
-	(*pos)++;
+	*pos = lockdep_next_lockchain(*pos - 1) + 1;
 	return lc_start(m, pos);
 }
 
@@ -141,6 +141,8 @@ static int lc_show(struct seq_file *m, void *v)
 	int i;
 
 	if (v == SEQ_START_TOKEN) {
+		if (nr_chain_hlocks > MAX_LOCKDEP_CHAIN_HLOCKS)
+			seq_printf(m, "(buggered) ");
 		seq_printf(m, "all lock chains:\n");
 		return 0;
 	}
@@ -199,6 +201,10 @@ static void lockdep_stats_debug_show(struct seq_file *m)
 		debug_atomic_read(chain_lookup_hits));
 	seq_printf(m, " cyclic checks:                 %11llu\n",
 		debug_atomic_read(nr_cyclic_checks));
+	seq_printf(m, " redundant checks:              %11llu\n",
+		debug_atomic_read(nr_redundant_checks));
+	seq_printf(m, " redundant links:               %11llu\n",
+		debug_atomic_read(nr_redundant));
 	seq_printf(m, " find-mask forwards checks:     %11llu\n",
 		debug_atomic_read(nr_find_usage_forwards_checks));
 	seq_printf(m, " find-mask backwards checks:    %11llu\n",
@@ -287,7 +293,7 @@ static int lockdep_stats_show(struct seq_file *m, void *v)
 
 #ifdef CONFIG_PROVE_LOCKING
 	seq_printf(m, " dependency chains:             %11lu [max: %lu]\n",
-			nr_lock_chains, MAX_LOCKDEP_CHAINS);
+			lock_chain_count(), MAX_LOCKDEP_CHAINS);
 	seq_printf(m, " dependency chain hlocks:       %11d [max: %lu]\n",
 			nr_chain_hlocks, MAX_LOCKDEP_CHAIN_HLOCKS);
 #endif

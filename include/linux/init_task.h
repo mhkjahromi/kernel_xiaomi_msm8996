@@ -163,8 +163,8 @@ extern struct task_group root_task_group;
 
 #ifdef CONFIG_RT_MUTEXES
 # define INIT_RT_MUTEXES(tsk)						\
-	.pi_waiters = RB_ROOT,						\
-	.pi_waiters_leftmost = NULL,
+	.pi_waiters = RB_ROOT_CACHED,					\
+	.pi_top_task = NULL,
 #else
 # define INIT_RT_MUTEXES(tsk)
 #endif
@@ -208,6 +208,7 @@ extern struct task_group root_task_group;
 	.policy		= SCHED_NORMAL,					\
 	.cpus_allowed	= CPU_MASK_ALL,					\
 	.nr_cpus_allowed= NR_CPUS,					\
+	.cpus_requested	= CPU_MASK_ALL,					\
 	.mm		= NULL,						\
 	.active_mm	= &init_mm,					\
 	.restart_block = {						\

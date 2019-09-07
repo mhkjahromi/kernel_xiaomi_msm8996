@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2015-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012, 2015-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -31,6 +31,7 @@
 #include "sde_rotator_util.h"
 #include "sde_rotator_trace.h"
 #include "sde_rotator_debug.h"
+#include "sde_rotator_dev.h"
 
 static inline u64 fudge_factor(u64 val, u32 numer, u32 denom)
 {
@@ -504,6 +505,14 @@ static int sde_mdp_parse_dt_misc(struct platform_device *pdev,
 		return rc;
 	}
 
+	rc = of_property_read_u32(pdev->dev.of_node,
+		"qcom,mdss-rot-qos-cpu-mask", &data);
+	mdata->rot_pm_qos_cpu_mask = (!rc ? data : 0);
+
+	rc = of_property_read_u32(pdev->dev.of_node,
+		 "qcom,mdss-rot-qos-cpu-dma-latency", &data);
+	mdata->rot_pm_qos_cpu_dma_latency = (!rc ? data : 0);
+
 	mdata->mdp_base = mdata->sde_io.base + SDE_MDP_OFFSET;
 
 	node = of_get_child_by_name(pdev->dev.of_node,
@@ -602,6 +611,13 @@ int sde_rotator_base_init(struct sde_rot_data_type **pmdata,
 {
 	int rc;
 	struct sde_rot_data_type *mdata;
+
+
+	/* if probe deferral happened, return early*/
+	if (sde_rot_res) {
+		SDEROT_ERR("Rotator data already initialized, skip init\n");
+		return 0;
+	}
 
 	mdata = devm_kzalloc(&pdev->dev, sizeof(*mdata), GFP_KERNEL);
 	if (mdata == NULL)
